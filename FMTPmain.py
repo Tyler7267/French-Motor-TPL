@@ -7,8 +7,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import PoissonRegressor
-from sklearn.metrics import d2_tweedie_score, mean_poisson_deviance
+from sklearn.linear_model import PoissonRegressor, GammaRegressor
+from sklearn.metrics import d2_tweedie_score, mean_poisson_deviance, mean_gamma_deviance
 
 #----------------PHASE 1: Data Preprocessing and Feature Engineering----------------#
 print("Starting Phase 1: Data Preprocessing and Feature Engineering...")
@@ -40,7 +40,7 @@ all_features = features_numeric + features_categorical
 print("Feature engineering completed. Sample of transformed data:")
 print(combined_data[all_features].head())
 
-# Creating a stratified train-test split 
+# Creating a stratified train-test split for the frequency model
 percent_train = 0.8
 print(f"Creating a stratified training and testing datasets...{percent_train} of data will be used for training.")
 
@@ -95,5 +95,54 @@ pred_freq_test = freq_pipeline.predict(X_test)*exposure_test
 dev_test = mean_poisson_deviance(y_test, pred_freq_test)
 print(f"Mean Poisson Deviance on test set: {dev_test:.4f}")
 
+
+
+#---------------Phase 4: Creating the Severity Model----------------#
+print("Starting Phase 4: Creating the Severity Model...")
+
+sev_train_df = train_df[(train_df['ClaimNb'] > 0) & (train_df['TotalClaimAmount'] > 0)].copy()
+sev_test_df = test_df[(test_df['ClaimNb'] > 0) & (test_df['TotalClaimAmount'] > 0)].copy()
+
+# Defining features specifically relevant to cost size
+sev_features = ['BonusMalus', 'Area', 'VehPower', 'VehBrand', 'VehGas', 'Region', 'DrivAge_Binned', 'VehAge_Binned']
+
+X_train_sev = sev_train_df[sev_features]
+y_train_sev = sev_train_df['TotalClaimAmount'] / sev_train_df['ClaimNb']
+
+weights_train_sev = sev_train_df['ClaimNb']
+
+X_test_sev = sev_test_df[sev_features]
+y_test_sev = sev_test_df['TotalClaimAmount'] / sev_test_df['ClaimNb']
+weights_test_sev = sev_test_df['ClaimNb']
+
+preprocessor_sev = ColumnTransformer(
+    transformers=[
+        ('cat', OneHotEncoder(drop = 'first', sparse_output = False), ['Area', 'VehPower', 'VehBrand', 'VehGas', 'Region', 'DrivAge_Binned', 'VehAge_Binned'])
+    ],
+    remainder = 'passthrough'
+)
+
+# Create Gamma GLM Pipeline for severity modeling
+sev_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor_sev),
+    ('regressor', GammaRegressor(alpha = 1e-3, max_iter = 500))
+])
+
+# Fitting the model using claim counts as regression weights
+sev_pipeline.fit(X_train_sev, y_train_sev, regressor__sample_weight = weights_train_sev)
+print("Severity model training completed. Concluding Phase 4.")
+
+#----------------PHASE 5: Severity Model Evaluation----------------#
+print("Starting Phase 5: Severity Model Evaluation...")
+
+# Predict average severity costs
+pred_sev_test = sev_pipeline.predict(X_test_sev)
+
+# Asses deviance score
+dev_sev_test = mean_gamma_deviance(y_test_sev, pred_sev_test, sample_weight = weights_test_sev)
+print(f"Mean Gamma Deviance on test set: {dev_sev_test:.4f}")
+
+print(f"Actual total claim cost (Test): ${sev_test_df['TotalClaimAmount'].sum():,.2f}")
+print(f"Predicted total claim cost (Test): ${((pred_sev_test * weights_test_sev).sum()):,.2f}")
 
 
