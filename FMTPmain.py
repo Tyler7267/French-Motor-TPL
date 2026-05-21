@@ -53,6 +53,48 @@ train_df, test_df = train_test_split(
     random_state = 42
 )
 
+# Implementing a Buhlmann-Straub Credibility Adjustment
+
+region_stats = train_df.groupby('Region').agg(
+    Total_Claims = ('ClaimNb', 'sum'),
+    Total_Exposure = ('Exposure', 'sum')
+).reset_index()
+
+region_stats['Observed_Frequency'] = region_stats['Total_Claims'] / region_stats['Total_Exposure']
+
+mu = train_df['ClaimNb'].sum() / train_df['Exposure'].sum()
+g = len(region_stats) # Number of groups (regions)
+
+# Process Variance
+sample_vars = []
+for reg in region_stats['Region']:
+    sub = train_df[train_df['Region'] == reg]
+    if len(sub) > 1:
+        var_i = np.sum(sub['Exposure'] * ((sub['ClaimNb']/sub['Exposure']) - (sub['ClaimNb'].sum()/sub['Exposure'].sum()))**2) / (len(sub) - 1)
+    else:
+        var_i = 0
+    sample_vars.append(var_i)
+
+s2 = np.mean(sample_vars)  # EPV
+
+# Estimating Variance of hypothetical means
+total_exposure_all = region_stats['Total_Exposure'].sum()
+c_factor = (total_exposure_all - np.sum(region_stats['Total_Exposure']**2)/ total_exposure_all) / (g - 1)
+
+# Weighted variance of group means relative to the global mean
+raw_vhm = np.sum(region_stats['Total_Exposure'] * (region_stats['Observed_Frequency'] - mu)**2)
+a = max(0, (raw_vhm - (g - 1) * s2) / c_factor)
+
+# Calculating credibility Z and Credility premium
+k = s2 / a if a > 0 else float('inf')
+
+region_stats['Z'] = np.where(a > 0, region_stats['Total_Exposure'] / (region_stats['Total_Exposure'] + k), 0.0)
+region_stats['Credibility_Frequency'] = region_stats['Z'] * region_stats['Observed_Frequency'] + ((1 - region_stats['Z']) * mu)
+
+cred_map = dict(zip(region_stats['Region'], region_stats['Credibility_Frequency']))
+train_df['Cred_Freq_Pred'] = train_df['Region'].map(cred_map)
+test_df['Cred_Freq_Pred'] = test_df['Region'].map(cred_map).fillna(mu) # For unseen regions in the test set, we assign the global mean frequency
+
 print("Stratified train-test split completed, concluding Phase 1.")
 #----------------PHASE 2: Building the Frequency Model----------------#
 print("Starting Phase 2: Building the Frequency Model..")
