@@ -1,0 +1,19 @@
+French Motor Third Party Liability Claims Actuarial Project
+    1. Data Merging and Feature Engineering
+        The Raw data is split into two tables. We need to aggregate the claims by policy, merge them with risk attributes, cap extreme values, and format our target variables.
+
+    2. Exploratory Data Analysis and Truncation
+        To help a GLM capture non-linear behaviors without modern machin learning, we must perform specific data transformations:
+            DriverAge: Age profiles have a highly non-linear U-shape. 
+            Density: Population density is heavily skewed. Use log(DriverAge) to linearize its relationship with frequency.
+
+    3. Frequency Model (Poisson GLM vs. LightGBM/XGBoost)
+        Claim counts are discrete and non-negative, the standard choice is a Poisson distribution using Exposure as an offset.
+        Tree models natively intercept interaction without manual binning.
+
+    4. Severity Model (Gamma GLM vs. Random Forest)
+        The claim amounts are continuous , highly skewed, and strictly positive, hinting at a Gamma distribution with a log link.
+        
+    5. Premium Calculation and Model Lift Evaluation
+        The pure premium is the expected loss cost per unit of exposure. We calculate it by multiplying the predicted frequency by the predicted severity.
+        We evaluate both models using a Gini index and an insurance lift chart
