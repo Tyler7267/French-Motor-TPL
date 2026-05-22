@@ -94,49 +94,50 @@ region_stats['Credibility_Frequency'] = region_stats['Z'] * region_stats['Observ
 cred_map = dict(zip(region_stats['Region'], region_stats['Credibility_Frequency']))
 train_df['Cred_Freq_Pred'] = train_df['Region'].map(cred_map)
 test_df['Cred_Freq_Pred'] = test_df['Region'].map(cred_map).fillna(mu) # For unseen regions in the test set, we assign the global mean frequency
-
+print(f"Credibility Constant (K = s^2 / a):      {k:.2f}")
 print("Stratified train-test split completed, concluding Phase 1.")
 #----------------PHASE 2: Building the Frequency Model----------------#
 print("Starting Phase 2: Building the Frequency Model..")
 
+freq_numerical_features = ['BonusMalus', 'LogDensity', 'Cred_Freq_Pred']
+freq_categorial_features = ['Area', 'VehPower', 'VehBrand', 'VehGas', 'DrivAge_Binned', 'VehAge_Binned']
+all_freq_features = freq_numerical_features + freq_categorial_features
+
 # Isolate predictors and target variable for the frequency model
-features = ['BonusMalus', 'LogDensity', 'Area', 'VehPower', 'VehBrand', 'VehGas', 'Region', 'DrivAge_Binned', 'VehAge_Binned']
+X_train_freq = train_df[all_freq_features]  # Include the credibility prediction as a feature
+y_train_freq = train_df['ClaimNb'] 
+exposure_train_freq = train_df['Exposure']
 
-X_train = train_df[features]
-y_train = train_df['ClaimNb'] 
-exposure_train = train_df['Exposure']
-
-X_test = test_df[features]
-y_test = test_df['ClaimNb']
-exposure_test = test_df['Exposure']
+X_test_freq = test_df[all_freq_features]  # Include the credibility prediction as a feature
+y_test_freq = test_df['ClaimNb']
+exposure_test_freq = test_df['Exposure']
 
 # Build preprocessing pipeline for categorical features
-preprocessor = ColumnTransformer(
+preprocessor_freq = ColumnTransformer(
     transformers=[
-        ('cat', OneHotEncoder(drop = 'first', sparse_output = False), features_categorical)
+        ('cat', OneHotEncoder(drop = 'first', sparse_output = False), freq_categorial_features)
     ],
     remainder = 'passthrough'
 )
 
 # Defining and training the Poisson GLM Pipeline
 freq_pipeline = Pipeline(steps=[
-    ('preprocessor', preprocessor),
+    ('preprocessor', preprocessor_freq),
     ('regressor', PoissonRegressor(alpha = 1e-5, max_iter = 300))
 ])
 
 print("Training the Poisson frequency model...")
-freq_pipeline.fit(X_train, y_train, regressor__sample_weight = exposure_train)  
+freq_pipeline.fit(X_train_freq, y_train_freq, regressor__sample_weight = exposure_train_freq)  
 print("Frequency model training completed.")
 print("Phase 2 completed")
 
 #----------------PHASE 3: Frequency Model Evaluation----------------#
 print("Starting Phase 3: Frequency Model Evaluation...")
 # Predicting expected claim counts per unit of exposure, then multiplying by actual exposure
-pred_freq_test = freq_pipeline.predict(X_test)*exposure_test
+pred_freq_test = freq_pipeline.predict(X_test_freq)*exposure_test_freq
+dev_test = mean_poisson_deviance(y_test_freq, pred_freq_test)
 
-dev_test = mean_poisson_deviance(y_test, pred_freq_test)
 print(f"Mean Poisson Deviance on test set: {dev_test:.4f}")
-
 
 
 #---------------Phase 4: Creating the Severity Model----------------#
