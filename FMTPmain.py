@@ -290,17 +290,17 @@ def ML_Severity_Model(train_df, test_df):
     best_score = np.inf
     best_params = None
 
-    for learning_rate in [0.03, 0.05]:
-        for max_depth in [3, 5]:
-            for max_iter in [200, 300]:
+    for learning_rate in [0.01, 0.02]:
+        for max_depth in [3, 4]:
+            for max_iter in [50, 100]:
                 base_ml_sev_model = Pipeline(steps=[
                     ('preprocessor', build_preprocessor(SEV_CATEGORICAL_FEATURES, SEV_NUMERIC_FEATURES)),
                     ('regressor', HistGradientBoostingRegressor(
                         learning_rate = learning_rate,
                         max_depth = max_depth,
                         max_iter = max_iter,
-                        min_samples_leaf = 10,
-                        l2_regularization = 0.0,
+                        min_samples_leaf = 50,
+                        l2_regularization = 10.0,
                         random_state = 42
                     ))
                 ])
@@ -324,8 +324,8 @@ def ML_Severity_Model(train_df, test_df):
             learning_rate = learning_rate,
             max_depth = max_depth,
             max_iter = max_iter,
-            min_samples_leaf = 10,
-            l2_regularization = 0.0,
+            min_samples_leaf = 50,
+            l2_regularization = 10.0,
             random_state = 42
         ))
     ])
